@@ -64,7 +64,7 @@ GRANT ALL PRIVILEGES ON DATABASE your_database TO your_user;
 
 ##### Create the Tables
 
-```bash
+```sql
 CREATE TABLE ufw_logs (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMP,
