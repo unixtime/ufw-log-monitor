@@ -13,7 +13,7 @@ import logging
 LOG_FILE_PATH = "/var/log/ufw.log"
 GEOIP_DB_PATH = "/usr/share/GeoIP/GeoLite2-City.mmdb"
 OUTPUT_LOG_FILE = "ufw.log.json"
-BATCH_SIZE = 100
+BATCH_SIZE = 4
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,12 +41,12 @@ def connect_db():
         exit(1)
 
 
-def process_log_line(log_line, log_reader):
-    if "UFW" not in log_line:
+def process_log_line(logs_line, logs_reader):
+    if "UFW" not in logs_line:
         return None
 
-    ip_src = re.search(r"SRC=([^ ]+)", log_line).group(1)
-    ip_dst = re.search(r"DST=([^ ]+)", log_line).group(1)
+    ip_src = re.search(r"SRC=([^ ]+)", logs_line).group(1)
+    ip_dst = re.search(r"DST=([^ ]+)", logs_line).group(1)
 
     if (
             ipaddress.ip_address(ip_src).is_private
@@ -55,19 +55,19 @@ def process_log_line(log_line, log_reader):
         return None
 
     current_year = datetime.now().year
-    timestamp_str = log_line[0:15]
+    timestamp_str = logs_line[0:15]
     timestamp = datetime.strptime(
         f"{current_year} {timestamp_str}", "%Y %b %d %H:%M:%S"
     )
-    proto = re.search(r"PROTO=([^ ]+)", log_line).group(1)
-    spt = re.search(r"SPT=([^ ]+)", log_line)
-    dpt = re.search(r"DPT=([^ ]+)", log_line)
+    proto = re.search(r"PROTO=([^ ]+)", logs_line).group(1)
+    spt = re.search(r"SPT=([^ ]+)", logs_line)
+    dpt = re.search(r"DPT=([^ ]+)", logs_line)
     spt = spt.group(1) if spt else None
     dpt = dpt.group(1) if dpt else None
-    geo_src = get_geolocation(ip_src, log_reader)
+    geo_src = get_geolocation(ip_src, logs_reader)
 
-    logs_entry = {
-        "timestamp": timestamp,
+    jlog_entry = {
+        "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),  # Updated line
         "ip_src": ip_src,
         "ip_dst": ip_dst,
         "proto": proto,
@@ -76,7 +76,7 @@ def process_log_line(log_line, log_reader):
         "geo_src": geo_src,
     }
 
-    return logs_entry
+    return jlog_entry
 
 
 def get_geolocation(ip, geo_reader):
@@ -95,7 +95,7 @@ def get_geolocation(ip, geo_reader):
 
 def insert_logs(db_log_entries, db_cursor):
     query = """
-        INSERT INTO ufw_logs (timestamp, ip_src, ip_dst, proto, spt, dpt, city_name, country_name, 
+        INSERT INTO ufw_logs (timestamp, ip_src, ip_dst, proto, spt, dpt, city_name, country_name,
         latitude, longitude, postal_code, subdivision_name)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
@@ -129,22 +129,25 @@ logger.info(f"Service is running, monitoring {LOG_FILE_PATH}...")
 try:
     process = subprocess.Popen(["tail", "-F", LOG_FILE_PATH], stdout=subprocess.PIPE)
     log_entries = []
-    with open(OUTPUT_LOG_FILE, "a") as outfile:
-        for line in iter(process.stdout.readline, ""):
-            log_entry = process_log_line(line.decode("utf-8"), reader)
-            if log_entry:
-                log_entries.append(log_entry)
+    for line in iter(process.stdout.readline, ""):
+        log_entry = process_log_line(line.decode("utf-8"), reader)
+        if log_entry:
+            log_entries.append(log_entry)
+            with open(OUTPUT_LOG_FILE, "a") as outfile:
                 json.dump(log_entry, outfile)
                 outfile.write("\n")
+            logger.info(f"Processed log entry for {log_entry['ip_src']} -> {log_entry['ip_dst']}")
 
-            if len(log_entries) >= BATCH_SIZE:
-                insert_logs(log_entries, cursor)
-                connection.commit()
-                log_entries = []
-
-        if log_entries:  # Insert any remaining entries
+        if len(log_entries) >= BATCH_SIZE:
             insert_logs(log_entries, cursor)
             connection.commit()
+            log_entries = []
+            logger.info("Batch inserted into the database.")
+
+    if log_entries:  # Insert any remaining entries
+        insert_logs(log_entries, cursor)
+        connection.commit()
+        logger.info("Final batch inserted into the database.")
 
 except Exception as e:
     logger.error(f"Error reading {LOG_FILE_PATH}: {e}")
