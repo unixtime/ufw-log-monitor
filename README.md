@@ -1,5 +1,7 @@
 # UFW Log Monitor
 
+![json_logs](media/json_logs.png)
+
 ## Overview
 
 This project provides a script that converts UFW logs to JSON and updates a PostgreSQL database with the new logs. It includes a Dockerfile and a Docker Compose file for containerization, a build script, and a shell script for pretty printing.
