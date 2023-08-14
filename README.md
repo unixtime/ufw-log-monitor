@@ -10,6 +10,7 @@ This project provides a script that converts UFW logs to JSON and updates a Post
 
 - Python 3.11+ (tested on 3.11)
 - PostgresSQL 15.0+ (tested on 15.0)
+- Maxmind GeoLite2 City Database - [Install](https://dev.maxmind.com/geoip/updating-databases)
 - Python Libraries: 
   - maxminddb
   - psycopg2-binary
