@@ -1,0 +1,34 @@
+version: '3.9'
+services:
+  ufw-log-monitor:
+    image: unixtime/ufw-log-monitor:latest
+    hostname: ufw-log-monitor
+    volumes:
+      - /var/log/ufw.log:/var/log/ufw.log
+      - /usr/share/GeoIP/GeoLite2-City.mmdb:/usr/share/GeoIP/GeoLite2-City.mmdb
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ufw_logs
+      DB_USER: ${DB_USER?var not set}
+      DB_PASSWORD: ${DB_PASSWORD?var not set}
+    depends_on:
+      - postgres
+  postgres:
+    image: postgres:15
+    hostname: postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME?Variable DB_NAME not set}
+      POSTGRES_USER: ${DB_USER?Variable DB_USER not set}
+      POSTGRES_PASSWORD: ${DB_PASSWORD?Variable DB_PASSWORD not set}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    healthcheck:
+        test: [ "CMD", "pg_isready", "-U", "${DB_USER}" ]
+        interval: 5s
+        retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+volumes:
+  pgdata:
