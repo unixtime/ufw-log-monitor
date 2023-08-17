@@ -99,23 +99,23 @@ def insert_logs(db_log_entries, db_cursor):
         latitude, longitude, postal_code, subdivision_name)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
-    data = [
-        (
+    data = []
+    for log in db_log_entries:
+        geo_src = log.get("geo_src", {})
+        data.append((
             log["timestamp"],
             log["ip_src"],
             log["ip_dst"],
             log["proto"],
             log["spt"],
             log["dpt"],
-            log["geo_src"].get("city_name"),
-            log["geo_src"].get("country_name"),
-            log["geo_src"].get("latitude"),
-            log["geo_src"].get("longitude"),
-            log["geo_src"].get("postal_code"),
-            log["geo_src"].get("subdivision_name"),
-        )
-        for log in db_log_entries
-    ]
+            geo_src.get("city_name", "Unknown City"),              # Default value added
+            geo_src.get("country_name", "Unknown Country"),        # Default value added
+            geo_src.get("latitude", 0.0),                          # Default value added
+            geo_src.get("longitude", 0.0),                         # Default value added
+            geo_src.get("postal_code", "Unknown Postal Code"),     # Default value added
+            geo_src.get("subdivision_name", "Unknown Subdivision") # Default value added
+        ))
     db_cursor.executemany(query, data)
 
 
