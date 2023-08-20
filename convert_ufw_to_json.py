@@ -12,11 +12,11 @@ import logging
 import time  # For adding sleep delay in subprocess management
 
 # Constants
-DEBUG_MODE = True  # Set to False to disable debugging output
-USE_DATABASE = False  # Set to False to only generate the JSON file
-LOG_FILE_PATH = "/var/log/ufw.log"
-GEOIP_DB_PATH = "/usr/share/GeoIP/GeoLite2-City.mmdb"
-OUTPUT_LOG_FILE = "ufw.log.json"
+DEBUG_MODE = os.environ.get("DEBUG_MODE", False)
+USE_DATABASE = os.environ.get("USE_DATABASE", False)
+LOG_FILE_PATH = os.environ.get("LOG_FILE_PATH", "/var/log/ufw.log")
+GEOIP_DB_PATH = os.environ.get("GEOIP_DB_PATH", "/usr/share/GeoIP/GeoLite2-City.mmdb")
+OUTPUT_LOG_FILE = os.environ.get("OUTPUT_LOG_FILE", "/app/ufw.log.json")
 BATCH_SIZE = 4
 RETRY_LIMIT = 3  # For subprocess management
 
@@ -57,10 +57,10 @@ def load_maxmind_db():
 def connect_db():
     try:
         conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "your_host"),
-            database=os.environ.get("DB_NAME", "your_database"),
-            user=os.environ.get("DB_USER", "your_user"),
-            password=os.environ.get("DB_PASSWORD", "your_password"),
+            host=os.environ.get("DB_HOST", "YOUR_DB_HOST"),
+            database=os.environ.get("DB_NAME", "YOUR_DB_NAME"),
+            user=os.environ.get("DB_USER", "YOUR_DB_USER"),
+            password=os.environ.get("DB_PASSWORD", "YOUR_DB_PASSWORD"),
         )
         return conn, conn.cursor()
     except Exception as error:
@@ -69,18 +69,18 @@ def connect_db():
 
 def process_log_line(logs_line, logs_reader):
     if "UFW BLOCK" in logs_line and "PROTO=TCP" in logs_line and ("SPT=" not in logs_line or "DPT=" not in logs_line):
-        print(f"Suspicious Log Line: {logs_line}")
+        logging.warning(f"Suspicious Log Line: {logs_line}")
     if DEBUG_MODE:
-        print(f"Processing: {logs_line}")
+        logging.info(f"Processing: {logs_line}")
     if "UFW" not in logs_line:
         if DEBUG_MODE:
-            print(f"Skipped Line: {logs_line}")
+            logging.info(f"Skipped Line: {logs_line}")
         return None
 
     match = LOG_PATTERN.search(logs_line)
     if not match:
         if DEBUG_MODE:
-            print(f"Unmatched Log Line: {logs_line}")
+            logging.info(f"Unmatched Log Line: {logs_line}")
         return None
 
     ufw_action = match.group('action')  # UFW BLOCK, UFW AUDIT, UFW ALLOW
@@ -92,12 +92,12 @@ def process_log_line(logs_line, logs_reader):
 
     if not spt or not dpt and proto in ["TCP", "UDP"]:
         if DEBUG_MODE:
-            print(f"Missing SPT or DPT in Log Line: {logs_line}")
+            logging.warning(f"Missing SPT or DPT in Log Line: {logs_line}")
         return None
 
     # Debugging statement based on DEBUG_MODE
     if DEBUG_MODE:
-        print(f"Parsed Log: Action: {ufw_action}, SRC: {ip_src}, DST: {ip_dst}")
+        logging.info(f"Parsed Log: Action: {ufw_action}, SRC: {ip_src}, DST: {ip_dst}")
 
     if ipaddress.ip_address(ip_src).is_private or ipaddress.ip_address(ip_dst).is_private:
         return None
@@ -122,7 +122,7 @@ def process_log_line(logs_line, logs_reader):
 
     # Debugging statement based on DEBUG_MODE
     if DEBUG_MODE:
-        print(f"Returning processed log entry: {jlog_entry}")
+        logging.info(f"Returning processed log entry: {jlog_entry}")
 
     return jlog_entry
 
