@@ -11,9 +11,14 @@ from datetime import datetime
 import logging
 import time  # For adding sleep delay in subprocess management
 
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Constants
-DEBUG_MODE = os.environ.get("DEBUG_MODE", False)
-USE_DATABASE = os.environ.get("USE_DATABASE", False)
+DEBUG_MODE = os.environ.get("DEBUG_MODE", "False") == "True"  # Fix for boolean
+USE_DATABASE = os.environ.get("USE_DATABASE", "False") == "True"  # Fix for boolean
 LOG_FILE_PATH = os.environ.get("LOG_FILE_PATH", "/var/log/ufw.log")
 GEOIP_DB_PATH = os.environ.get("GEOIP_DB_PATH", "/usr/share/GeoIP/GeoLite2-City.mmdb")
 OUTPUT_LOG_FILE = os.environ.get("OUTPUT_LOG_FILE", "/app/ufw.log.json")
@@ -181,33 +186,34 @@ process = None
 retry_count = 0
 
 try:
-    process = subprocess.Popen(["tail", "--follow=name", LOG_FILE_PATH],
-                               stdout=subprocess.PIPE, universal_newlines=True)
+    with subprocess.Popen(["tail", "--follow=name", LOG_FILE_PATH],
+                          stdout=subprocess.PIPE, universal_newlines=True) as process:
 
-    while process.poll() is None:  # Continue processing while the tail process is running
-        logs = []
+        while process.poll() is None:  # Continue processing while the tail process is running
+            logs = []
 
-        for _ in range(BATCH_SIZE):
-            logs.append(process.stdout.readline().strip())
+            for _ in range(BATCH_SIZE):
+                logs.append(process.stdout.readline().strip())
 
-        # Processing logs
-        jlog_entries = [process_log_line(log, reader) for log in logs if log]
-        jlog_entries = [entry for entry in jlog_entries if entry]
+            # Processing logs
+            jlog_entries = [process_log_line(log, reader) for log in logs if log]
+            jlog_entries = [entry for entry in jlog_entries if entry]
 
-        # Write to JSON File
-        with open(OUTPUT_LOG_FILE, "a") as f:
-            json.dump(jlog_entries, f, indent=2)
+            # Write to JSON File
+            with open(OUTPUT_LOG_FILE, "a") as f:
+                for entry in jlog_entries:
+                    json.dump(entry, f, indent=2)
 
-        # If database is enabled, insert logs into the database
-        if USE_DATABASE and jlog_entries:
-            try:
-                insert_logs(jlog_entries, cursor)
-                connection.commit()
-            except Exception as e:
-                logger.error(f"Error inserting logs into the database: {e}")
-                connection.rollback()
+            # If database is enabled, insert logs into the database
+            if USE_DATABASE and jlog_entries:
+                try:
+                    insert_logs(jlog_entries, cursor)
+                    connection.commit()
+                except Exception as e:
+                    logger.error(f"Error inserting logs into the database: {e}")
+                    connection.rollback()
 
-        time.sleep(0.5)  # Avoids excessive CPU usage, can be adjusted as necessary
+            time.sleep(0.5)  # Avoids excessive CPU usage, can be adjusted as necessary
 
 except KeyboardInterrupt:
     logger.info("Gracefully stopping the service...")
@@ -223,7 +229,7 @@ except Exception as ex:
 
 finally:
     if process:
-        process.terminate()
+        process.terminate()  # Ensuring the process is terminated properly.
 
     safe_close(reader, "GeoIP Reader")
 

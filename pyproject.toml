@@ -10,6 +10,7 @@ packages = [{include = "ufw_monitor_logs"}]
 python = "^3.11"
 maxminddb = "^2.4.0"
 psycopg2-binary = "^2.9.7"
+python-dotenv = "^1.0.0"
 
 
 [build-system]
