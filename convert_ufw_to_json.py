@@ -5,6 +5,7 @@ import json
 import maxminddb
 import ipaddress
 import psycopg2
+
 import subprocess
 from datetime import datetime
 import logging
@@ -19,13 +20,32 @@ BATCH_SIZE = 4
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+LOG_PATTERN = re.compile(
+    r"SRC=(?P<ip_src>[^ ]+) DST=(?P<ip_dst>[^ ]+) "
+    r"PROTO=(?P<proto>[^ ]+)(?: SPT=(?P<spt>[^ ]+))?(?: DPT=(?P<dpt>[^ ]+))?")
+
+
+def get_year_based_on_time(log_time):
+    now = datetime.now()
+    log_hour = int(log_time.split()[1].split(':')[0])
+    current_hour = now.hour
+    return now.year if log_hour <= current_hour else now.year - 1
+
+
+def close_resource(resource, name):
+    """Safely closes a given resource."""
+    try:
+        if resource:
+            resource.close()
+    except Exception as error:
+        logger.error(f"Error while closing {name}: {error}")
+
 
 def load_maxmind_db():
     try:
         return maxminddb.open_database(GEOIP_DB_PATH)
     except Exception as error:
-        logger.error(f"Error loading MaxMind database: {error}")
-        exit(1)
+        raise RuntimeError(f"Error loading MaxMind database: {error}")
 
 
 def connect_db():
@@ -37,37 +57,32 @@ def connect_db():
             password=os.environ.get("DB_PASSWORD", "your_password"),
         )
     except Exception as error:
-        logger.error(f"Error connecting to database: {error}")
-        exit(1)
+        raise RuntimeError(f"Error connecting to database: {error}")
 
 
 def process_log_line(logs_line, logs_reader):
     if "UFW" not in logs_line:
         return None
 
-    ip_src = re.search(r"SRC=([^ ]+)", logs_line).group(1)
-    ip_dst = re.search(r"DST=([^ ]+)", logs_line).group(1)
-
-    if (
-            ipaddress.ip_address(ip_src).is_private
-            or ipaddress.ip_address(ip_dst).is_private
-    ):
+    match = LOG_PATTERN.search(logs_line)
+    if not match:
         return None
 
-    current_year = datetime.now().year
-    timestamp_str = logs_line[0:15]
-    timestamp = datetime.strptime(
-        f"{current_year} {timestamp_str}", "%Y %b %d %H:%M:%S"
-    )
-    proto = re.search(r"PROTO=([^ ]+)", logs_line).group(1)
-    spt = re.search(r"SPT=([^ ]+)", logs_line)
-    dpt = re.search(r"DPT=([^ ]+)", logs_line)
-    spt = spt.group(1) if spt else None
-    dpt = dpt.group(1) if dpt else None
+    ip_src = match.group('ip_src')
+    ip_dst = match.group('ip_dst')
+    proto = match.group('proto')
+    spt = match.group('spt')
+    dpt = match.group('dpt')
+
+    if ipaddress.ip_address(ip_src).is_private or ipaddress.ip_address(ip_dst).is_private:
+        return None
+
+    year = get_year_based_on_time(logs_line[0:15])
+    timestamp = datetime.strptime(f"{year} {logs_line[0:15]}", "%Y %b %d %H:%M:%S")
     geo_src = get_geolocation(ip_src, logs_reader)
 
     jlog_entry = {
-        "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),  # Updated line
+        "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         "ip_src": ip_src,
         "ip_dst": ip_dst,
         "proto": proto,
@@ -109,12 +124,12 @@ def insert_logs(db_log_entries, db_cursor):
             log["proto"],
             log["spt"],
             log["dpt"],
-            geo_src.get("city_name", "Unknown City"),              # Default value added
-            geo_src.get("country_name", "Unknown Country"),        # Default value added
-            geo_src.get("latitude", 0.0),                          # Default value added
-            geo_src.get("longitude", 0.0),                         # Default value added
-            geo_src.get("postal_code", "Unknown Postal Code"),     # Default value added
-            geo_src.get("subdivision_name", "Unknown Subdivision") # Default value added
+            geo_src.get("city_name", "Unknown City"),
+            geo_src.get("country_name", "Unknown Country"),
+            geo_src.get("latitude", 0.0),
+            geo_src.get("longitude", 0.0),
+            geo_src.get("postal_code", "Unknown Postal Code"),
+            geo_src.get("subdivision_name", "Unknown Subdivision")
         ))
     db_cursor.executemany(query, data)
 
@@ -125,11 +140,22 @@ connection = connect_db()
 cursor = connection.cursor()
 
 logger.info(f"Service is running, monitoring {LOG_FILE_PATH}...")
-
+process = None
 try:
-    process = subprocess.Popen(["tail", "-F", LOG_FILE_PATH], stdout=subprocess.PIPE)
+    process = subprocess.Popen(["tail", "--follow=name", LOG_FILE_PATH], stdout=subprocess.PIPE)
     log_entries = []
+
     for line in iter(process.stdout.readline, ""):
+        # Check if process is still running. If not, restart it.
+        poll_status = process.poll()
+        if poll_status is not None:
+            logger.warning("tail process was interrupted. Restarting...")
+            if poll_status is None:  # If process is still running
+                process.terminate()  # Terminate the old process
+                process.wait()  # Wait for the process to terminate
+            process = subprocess.Popen(["tail", "--follow=name", LOG_FILE_PATH], stdout=subprocess.PIPE)
+            continue  # Go to the next iteration to start reading from the new process
+
         log_entry = process_log_line(line.decode("utf-8"), reader)
         if log_entry:
             log_entries.append(log_entry)
@@ -150,9 +176,13 @@ try:
         logger.info("Final batch inserted into the database.")
 
 except Exception as e:
-    logger.error(f"Error reading {LOG_FILE_PATH}: {e}")
+    logger.error(f"Error: {e}")
+
 
 finally:
-    cursor.close()
-    connection.close()
-    reader.close()
+    close_resource(cursor, "cursor")
+    close_resource(connection, "database connection")
+    close_resource(reader, "MaxMind database reader")
+    if process and hasattr(process, 'terminate'):
+        process.terminate()
+    logger.info("Service stopped.")
