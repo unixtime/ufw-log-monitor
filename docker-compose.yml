@@ -11,6 +11,11 @@ services:
       DB_NAME: ufw_logs
       DB_USER: ${DB_USER?var not set}
       DB_PASSWORD: ${DB_PASSWORD?var not set}
+      DEBUG_MODE: ${DEBUG_MODE?var not set}
+      ENV USE_DATABASE: ${USE_DATABASE?var not set}
+      ENV LOG_FILE_PATH: ${LOG_FILE_PATH?var not set}
+      ENV GEOIP_DB_PATH: ${GEOIP_DB_PATH?var not set}
+      ENV OUTPUT_LOG_FILE: ${OUTPUT_LOG_FILE?var not set}
     depends_on:
       - postgres
   postgres:
