@@ -4,7 +4,7 @@ LABEL maintainer="Hassan El-Masri <hassan@unixtime.com>"
 LABEL description="Convert UFW logs to JSON and insert them into a PostgreSQL database"
 
 # Install required libraries
-RUN pip install maxminddb psycopg2-binary \
+RUN pip install maxminddb psycopg2-binary python-dotenv \
     && apk add --no-cache jq
 
 # Copy the script to the container
