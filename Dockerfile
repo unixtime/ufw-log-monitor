@@ -5,7 +5,7 @@ LABEL description="Convert UFW logs to JSON and insert them into a PostgreSQL da
 
 # Install required libraries
 RUN pip install maxminddb psycopg2-binary python-dotenv \
-    && apk add --no-cache jq
+    && apk add --no-cache jq coreutils
 
 # Copy the script to the container
 COPY convert_ufw_to_json.py /app/convert_ufw_to_json.py
