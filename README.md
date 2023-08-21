@@ -1,10 +1,12 @@
 # UFW Log Monitor
 
-![json_logs](media/json_logs.png)
+![json_logs](media/ufw_monitor.png)
+
+> Note: I am using [Metabase](https://github.com/metabase/metabase) to visualize the data. You can use any tool you like.
 
 ## Overview
 
-This project provides a script that converts UFW logs to JSON and updates a PostgreSQL database with the new logs. It includes a Dockerfile and a Docker Compose file for containerization, a build script, and a shell script for pretty printing.
+This project provides a script that converts UFW logs to JSON and updates a PostgresSQL database with the new logs. It includes a Dockerfile and a Docker Compose file for containerization, a build script, and a shell script for pretty printing.
 
 ## Requirements
 
@@ -68,30 +70,42 @@ GRANT ALL PRIVILEGES ON DATABASE your_database TO your_user;
 ##### Create the Tables
 
 ```sql
+CREATE TYPE ufw_action AS ENUM (
+  'UFW BLOCK',
+  'UFW AUDIT',
+  'UFW ALLOW'
+);
+
 CREATE TABLE ufw_logs (
-    id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMP,
-    ip_src INET,
-    ip_dst INET,
-    proto VARCHAR(10),
-    spt INTEGER,
-    dpt INTEGER,
-    city_name VARCHAR(100),
-    country_name VARCHAR(100),
-    latitude NUMERIC,
-    longitude NUMERIC,
-    postal_code VARCHAR(20),
-    subdivision_name VARCHAR(100)
+  id SERIAL PRIMARY KEY,
+  timestamp timestamp(6),
+  ip_src inet,
+  ip_dst inet,
+  proto varchar(10),
+  spt int4,
+  dpt int4,
+  city_name varchar(100),
+  country_name varchar(100),
+  latitude numeric,
+  longitude numeric,
+  postal_code varchar(20),
+  subdivision_name varchar(100),
+  action ufw_action
 );
 ```
 #### Environment Variables
 
-| Variable | Description |
-| --- | --- |
-| DB_HOST | The hostname or IP address of the database server |
-| DB_NAME | The name of the database |
-| DB_USER | The username used to connect to the database |
-| DB_PASSWORD | The password used to connect to the database |
+| Variable        | Description                                       |
+|-----------------|---------------------------------------------------|
+| DB_HOST         | The hostname or IP address of the database server |
+| DB_NAME         | The name of the database                          |
+| DB_USER         | The username used to connect to the database      |
+| DB_PASSWORD     | The password used to connect to the database      |
+| DEBUG_MODE      | Set to True to enable debug mode                  |
+| USE_DATABASE    | Set to True to enable database logging            |
+| LOG_FILE_PATH   | The path to the UFW log file                      |
+| GEOIP_DB_PATH   | The path to the Maxmind GeoLite2 City Database    |
+| OUTPUT_LOG_FILE | The path to the output log file                   |
 
 
 
@@ -120,11 +134,47 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-## Usage
+#### Pretty Print the JSON
+
+```bash
+docker exec -it ufw_log_monitor ./pretty_print_json.sh
+```
+
+#### Stop the Docker Container
+
+```bash
+docker-compose down
+```
+
+#### Logs
+
+```bash
+docker compose logs -f
+```
 
 ### Local Execution
 
 #### Run the script
+
+If you are using poetry:
+
+##### Source the virtual environment
+
+```bash
+peotry shell
+```
+
+```bash
+poetry run python3 convert_ufw_to_json.py
+```
+
+If you are not using poetry:
+
+##### Source the virtual environment
+
+```bash
+source .venv/bin/activate
+```
 
 ```bash
 python3 convert_ufw_to_json.py
@@ -133,21 +183,11 @@ python3 convert_ufw_to_json.py
 #### Pretty Print the JSON
 
 ```bash
-./pretty_print.sh
+./pretty_print_json.sh
 ```
 
-### Docker Execution
+## License
+Apache 2.0 License. See the [LICENSE](LICENSE) file for details.
 
-#### Run the script
-
-```bash
-docker exec -it ufw_log_monitor python3 convert_ufw_to_json.py
-```
-
-#### Pretty Print the JSON
-
-```bash
-docker exec -it ufw_log_monitor ./pretty_print_json.sh
-```
 
 
